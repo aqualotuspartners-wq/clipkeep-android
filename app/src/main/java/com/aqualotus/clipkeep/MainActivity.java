@@ -16,6 +16,7 @@ import android.view.View;
 import android.view.WindowInsets;
 import android.widget.*;
 import com.google.android.gms.ads.*;
+import com.google.android.gms.ads.rewarded.*;
 import com.google.android.ump.*;
 import org.json.JSONObject;
 import java.io.*;
@@ -30,7 +31,9 @@ public class MainActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private EditText input;
     private TextView status;
-    private Button check, save, privacy;
+    private Button check, save, privacy, rewardButton, recent;
+    private RewardedAd rewarded;
+    private boolean loadingReward, loopPreview;
     private LinearLayout bannerSlot;
     private VideoView preview;
     private Uri clip;
@@ -86,6 +89,18 @@ public class MainActivity extends Activity {
         add(card, button("Paste link", false, v -> paste()), 8);
         check = button("Find video", true, v -> resolve());
         add(card, check, 0);
+        recent = button("Use last link", false, v -> {
+            input.setText(getPreferences(MODE_PRIVATE).getString("lastLink", ""));
+            input.setSelection(input.length());
+            status.setText("Link restored. Tap Find video to look it up.");
+        });
+        recent.setVisibility(getPreferences(MODE_PRIVATE).contains("lastLink") ? View.VISIBLE : View.GONE);
+        add(body, recent, 8);
+        add(body, button("How to copy an Instagram link", false, v ->
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Copy an Instagram link")
+                .setMessage("Open a public Reel or active Story in Instagram. Tap Share, then Copy link. Return to ClipKeep and tap Paste link.")
+                .setPositiveButton("Got it", null).show()), 12);
         if (BuildConfig.DEBUG) {
             add(body, button("Choose a video from this device", false, v -> pick()), 14);
         }
@@ -108,6 +123,14 @@ public class MainActivity extends Activity {
         });
         save = button("Save to device", true, v -> save());
         add(body, save, 8);
+        rewardButton = button("Watch an ad to loop this preview", false, v -> showReward());
+        add(body, rewardButton, 14);
+        preview.setOnCompletionListener(player -> {
+            if (loopPreview && previewReady) preview.start();
+        });
+        add(body, button("Privacy policy", false, v ->
+            startActivity(new Intent(Intent.ACTION_VIEW,
+                Uri.parse("https://clipkeep-privacy.ghjjjje.chatgpt.site/")))), 10);
         bannerSlot = new LinearLayout(this);
         bannerSlot.setGravity(android.view.Gravity.CENTER);
         bannerSlot.setVisibility(View.GONE);
@@ -115,6 +138,7 @@ public class MainActivity extends Activity {
         privacy = button("Ad privacy options", false, v -> {
             UserMessagingPlatform.showPrivacyOptionsForm(this, error -> {
                 clearBanner();
+                rewarded = null;
                 if (consent.canRequestAds()) startAds();
                 render();
             });
@@ -198,6 +222,7 @@ public class MainActivity extends Activity {
     private void select(Uri video) {
         clip = video;
         previewReady = false;
+        loopPreview = false;
         preview.stopPlayback();
         preview.setVisibility(video == null ? View.GONE : View.VISIBLE);
         if (video != null) {
@@ -239,6 +264,7 @@ public class MainActivity extends Activity {
                 HttpURLConnection connection = open(endpoint);
                 try {
                     connection.setRequestMethod("POST");
+                    connection.setReadTimeout(60000);
                     connection.setDoOutput(true);
                     connection.setRequestProperty("Content-Type", "application/json");
                     JSONObject payload = new JSONObject().put("url", "https://www.instagram.com" + path);
@@ -265,6 +291,10 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (isDestroyed()) return;
                 busy = false;
+                if (result != null) {
+                    getPreferences(MODE_PRIVATE).edit().putString("lastLink", "https://www.instagram.com" + path).apply();
+                    recent.setVisibility(View.VISIBLE);
+                }
                 select(result);
                 if (result == null) status.setText("This video is unavailable from the connected source.");
             });
@@ -383,11 +413,65 @@ public class MainActivity extends Activity {
         view.loadAd(new AdRequest.Builder().build());
     }
 
+    private void loadReward() {
+        if (!previewReady || !adsReady || !consent.canRequestAds() ||
+            rewarded != null || loadingReward || loopPreview) return;
+        loadingReward = true;
+        RewardedAd.load(this, BuildConfig.REWARDED_ID, new AdRequest.Builder().build(),
+            new RewardedAdLoadCallback() {
+                @Override public void onAdLoaded(RewardedAd ad) {
+                    loadingReward = false;
+                    if (isDestroyed() || !consent.canRequestAds()) return;
+                    rewarded = ad;
+                    updateRewardButton();
+                }
+
+                @Override public void onAdFailedToLoad(LoadAdError error) {
+                    loadingReward = false;
+                }
+            });
+    }
+
+    private void updateRewardButton() {
+        rewardButton.setVisibility(previewReady && rewarded != null && !loopPreview &&
+            consent != null && consent.canRequestAds() ? View.VISIBLE : View.GONE);
+        rewardButton.setEnabled(!busy);
+    }
+
+    private void showReward() {
+        if (rewarded == null || !previewReady || busy || !consent.canRequestAds()) return;
+        RewardedAd ad = rewarded;
+        rewarded = null;
+        updateRewardButton();
+        preview.pause();
+        ad.setFullScreenContentCallback(new FullScreenContentCallback() {
+            @Override public void onAdDismissedFullScreenContent() {
+                if (isDestroyed()) return;
+                if (loopPreview && previewReady) preview.start();
+                else loadReward();
+            }
+
+            @Override public void onAdFailedToShowFullScreenContent(AdError error) {
+                if (isDestroyed()) return;
+                status.setText("Ad unavailable. You can still save the video.");
+                loadReward();
+            }
+        });
+        ad.show(this, reward -> {
+            if (isDestroyed()) return;
+            loopPreview = true;
+            preview.seekTo(0);
+            status.setText("Looping preview unlocked.");
+        });
+    }
+
     private void render() {
         check.setEnabled(!busy);
         save.setVisibility(previewReady ? View.VISIBLE : View.GONE);
         save.setEnabled(!busy);
         updateBanner();
+        updateRewardButton();
+        loadReward();
     }
 
     @Override protected void onPause() {

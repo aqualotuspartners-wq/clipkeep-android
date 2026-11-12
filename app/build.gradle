@@ -2,6 +2,7 @@ plugins { id 'com.android.application' version '8.13.2' }
 
 def endpoint = providers.gradleProperty('resolverUrl').orElse('').get()
 def adApp = providers.gradleProperty('admobAppId').orElse('ca-app-pub-3956817331315524~2878774659').get()
+def rewardedId = providers.gradleProperty('rewardedAdId').orElse('ca-app-pub-3956817331315524/2923520037').get()
 def bannerId = providers.gradleProperty('bannerAdId').orElse('ca-app-pub-3956817331315524/6040783759').get()
 android {
     namespace 'com.aqualotus.clipkeep'
@@ -10,15 +11,17 @@ android {
         applicationId 'com.aqualotus.clipkeep'
         minSdk 29
         targetSdk 36
-        versionCode 1
-        versionName '1.0'
+        versionCode 3
+        versionName '1.1'
         manifestPlaceholders = [adAppId: adApp]
         buildConfigField 'String', 'RESOLVER_URL', groovy.json.JsonOutput.toJson(endpoint)
+        buildConfigField 'String', 'REWARDED_ID', groovy.json.JsonOutput.toJson(rewardedId)
         buildConfigField 'String', 'BANNER_ID', groovy.json.JsonOutput.toJson(bannerId)
     }
     buildTypes {
         debug {
             manifestPlaceholders = [adAppId: 'ca-app-pub-3940256099942544~3347511713']
+            buildConfigField 'String', 'REWARDED_ID', '"ca-app-pub-3940256099942544/5224354917"'
             buildConfigField 'String', 'BANNER_ID', '"ca-app-pub-3940256099942544/6300978111"'
         }
     }
