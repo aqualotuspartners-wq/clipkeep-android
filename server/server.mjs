@@ -1,9 +1,10 @@
 import { createServer } from 'node:http';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { fetchVideo } from './rapidapi.mjs';
 
 const MAX_BYTES = 200 * 1024 * 1024;
 const TTL_SECONDS = 900;
@@ -42,6 +43,33 @@ for (const { instagramUrl, id } of catalog) {
     files.set(id, resolve(directory, id + '.mp4'));
 }
 
+const providerKey = process.env.RAPIDAPI_KEY;
+const approved = new Map();
+const pending = new Map();
+if (providerKey) {
+    await mkdir(directory, { recursive: true });
+    for (const link of (process.env.RAPIDAPI_APPROVED_LINKS ?? process.env.RAPIDAPI_APPROVED_REELS ?? '').split(',').filter(Boolean)) {
+        const path = instagramPath(link.trim());
+        if (!path || !/^\/(reel|stories)\//.test(path)) throw new Error('Invalid approved Reel or Story URL.');
+        const id = 'rapid-' + createHash('sha256').update(path).digest('hex');
+        if (files.has(id)) throw new Error('Provider video ID collides with a catalog entry.');
+        approved.set(path, id);
+        files.set(id, resolve(directory, id + '.mp4'));
+    }
+}
+
+async function resolveProviderVideo(path, id) {
+    const destination = files.get(id);
+    const existing = await stat(destination).catch(() => null);
+    if (existing?.isFile() && existing.size > 0 && existing.size <= MAX_BYTES) return true;
+    if (!pending.has(id)) {
+        const download = fetchVideo(path, providerKey, destination, MAX_BYTES)
+            .finally(() => pending.delete(id));
+        pending.set(id, download);
+    }
+    return pending.get(id);
+}
+
 function signature(id, expiration) {
     return createHmac('sha256', key).update(id + ':' + expiration).digest('hex');
 }
@@ -67,7 +95,15 @@ async function lookup(req, res) {
     catch { return json(res, 400, { error: 'invalid_json' }); }
     const path = typeof body?.url === 'string' && instagramPath(body.url);
     if (!path) return json(res, 400, { error: 'invalid_instagram_url' });
-    const id = index.get(path);
+    const catalogId = index.get(path);
+    const id = catalogId ?? approved.get(path);
+    if (!catalogId && id) {
+        try {
+            if (!await resolveProviderVideo(path, id)) return json(res, 404, { error: 'video_unavailable' });
+        } catch {
+            return json(res, 502, { error: 'provider_unavailable' });
+        }
+    }
     if (!id) return json(res, 404, { error: 'video_unavailable' });
     const info = await stat(files.get(id)).catch(() => null);
     if (!info?.isFile() || info.size < 1 || info.size > MAX_BYTES) {
