@@ -22,7 +22,7 @@ export async function fetchVideo(path, key, destination, maxBytes, request = fet
     if (!video) return false;
     const url = new URL(video.url);
     if (url.protocol !== 'https:' || url.username || url.password || url.port ||
-        !url.hostname.endsWith('.cdninstagram.com') || !url.pathname.endsWith('.mp4')) {
+      !/(?:^|\.)(?:cdninstagram\.com|fbcdn\.net)$/.test(url.hostname) || !url.pathname.endsWith('.mp4')) {
         throw new Error('Unexpected media URL');
     }
     const media = await request(url, { redirect: 'error', signal: AbortSignal.timeout(20_000) });
