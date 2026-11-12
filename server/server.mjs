@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { fetchVideo } from './rapidapi.mjs';
@@ -58,6 +58,34 @@ if (providerKey) {
     }
 }
 
+const publicLookup = Boolean(providerKey) && process.env.RAPIDAPI_PUBLIC_LOOKUP === 'true';
+const publicClips = new Map();
+const attemptTimes = [];
+const PUBLIC_CACHE_LIMIT = 24;
+const PROVIDER_WINDOW_MS = 60 * 60 * 1000;
+const PROVIDER_WINDOW_LIMIT = 20;
+
+async function publicVideoId(path) {
+    const now = Date.now();
+    for (const [id, entry] of publicClips) {
+        if (entry.expires <= now && !pending.has(id)) {
+            publicClips.delete(id);
+            files.delete(id);
+            await rm(entry.file, { force: true });
+        }
+    }
+    const id = 'public-' + createHash('sha256').update(path).digest('hex');
+    if (publicClips.has(id)) return id;
+    while (attemptTimes.length && attemptTimes[0] <= now - PROVIDER_WINDOW_MS) attemptTimes.shift();
+    if (attemptTimes.length >= PROVIDER_WINDOW_LIMIT || publicClips.size >= PUBLIC_CACHE_LIMIT ||
+        pending.size >= 4) return null;
+    attemptTimes.push(now);
+    const file = resolve(directory, id + '.mp4');
+    publicClips.set(id, { file, expires: now + 60 * 60 * 1000 });
+    files.set(id, file);
+    return id;
+}
+
 async function resolveProviderVideo(path, id) {
     const destination = files.get(id);
     const existing = await stat(destination).catch(() => null);
@@ -96,11 +124,23 @@ async function lookup(req, res) {
     const path = typeof body?.url === 'string' && instagramPath(body.url);
     if (!path) return json(res, 400, { error: 'invalid_instagram_url' });
     const catalogId = index.get(path);
-    const id = catalogId ?? approved.get(path);
+    let id = catalogId ?? approved.get(path);
+    if (!id && publicLookup && /^\/(reel|stories)\//.test(path)) {
+        id = await publicVideoId(path);
+        if (!id) return json(res, 429, { error: 'lookup_limit_reached' });
+    }
     if (!catalogId && id) {
+        const cached = publicClips.get(id);
+        if (cached?.failure) return json(res, cached.failure, { error: 'video_unavailable' });
         try {
-            if (!await resolveProviderVideo(path, id)) return json(res, 404, { error: 'video_unavailable' });
+            if (!await resolveProviderVideo(path, id)) {
+                const cached = publicClips.get(id);
+                if (cached) cached.failure = 404;
+                return json(res, 404, { error: 'video_unavailable' });
+            }
         } catch {
+            const cached = publicClips.get(id);
+            if (cached) cached.failure = 502;
             return json(res, 502, { error: 'provider_unavailable' });
         }
     }
@@ -110,6 +150,8 @@ async function lookup(req, res) {
         return json(res, 404, { error: 'video_unavailable' });
     }
     const expiration = Math.floor(Date.now() / 1000) + TTL_SECONDS;
+    const cached = publicClips.get(id);
+    if (cached) cached.expires = Math.max(cached.expires, expiration * 1000);
     const url = new URL('/media/' + id, origin);
     url.searchParams.set('expires', expiration);
     url.searchParams.set('signature', signature(id, expiration));
