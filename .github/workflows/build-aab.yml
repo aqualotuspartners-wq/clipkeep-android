@@ -21,7 +21,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - run: gradle :app:bundleRelease -Pandroid.useAndroidX=true
+      -  run: gradle :app:bundleRelease -Pandroid.useAndroidX=true -PresolverUrl=https://clipkeep-server.onrender.com/resolve
       - uses: actions/upload-artifact@v4
         with:
           name: ClipKeep-unsigned-aab
