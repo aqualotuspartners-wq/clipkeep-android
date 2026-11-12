@@ -38,14 +38,18 @@ public class MainActivity extends Activity {
     private VideoView preview;
     private Uri clip;
     private AdView banner;
+    private ScrollView screen;
+    private LinearLayout resultCard;
+    private String bannerUnit;
     private ConsentInformation consent;
     private boolean adsStarted, adsReady, busy, previewReady;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         ScrollView scroll = new ScrollView(this);
+        screen = scroll;
         scroll.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-            new int[]{0xfff2e3ff, 0xfffff8fc, 0xfffff1e1}));
+            new int[]{0xfff8edff, 0xfffff7fb, 0xfffff0e3}));
         scroll.setFillViewport(true);
         getWindow().getDecorView().setSystemUiVisibility(
             View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
@@ -66,10 +70,21 @@ public class MainActivity extends Activity {
         scroll.addView(body);
         setContentView(scroll);
 
-        add(body, label("↓  ClipKeep", 22, ACCENT, true), 28);
-        add(body, label("Download Instagram", 37, INK, true), 3);
-        add(body, label("Stories & Reels", 42, ACCENT, true), 14);
-        add(body, label("Paste an Instagram link to get started.", 16, MUTED, false), 25);
+        TextView brand = label("↓  ClipKeep", 23, INK, true);
+        brand.setLetterSpacing(-0.045f);
+        add(body, brand, 40);
+        TextView icon = label("↓", 29, WHITE, true);
+        icon.setGravity(android.view.Gravity.CENTER);
+        icon.setBackground(accentBackground(18));
+        LinearLayout.LayoutParams iconFrame = new LinearLayout.LayoutParams(dp(56), dp(56));
+        iconFrame.gravity = android.view.Gravity.CENTER_HORIZONTAL;
+        iconFrame.bottomMargin = dp(20);
+        body.addView(icon, iconFrame);
+        add(body, headline("Download Instagram", 34, INK), 0);
+        add(body, headline("Stories & Reels", 41, ACCENT), 13);
+        TextView intro = label("Paste an Instagram link to get started.", 16, MUTED, false);
+        intro.setGravity(android.view.Gravity.CENTER);
+        add(body, intro, 25);
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(17), dp(16), dp(17));
@@ -85,8 +100,14 @@ public class MainActivity extends Activity {
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         input.setPadding(dp(12), dp(12), dp(12), dp(12));
         input.setBackground(background(0xfffbf3fc, 12));
-        add(card, input, 10);
-        add(card, button("Paste link", false, v -> paste()), 8);
+        LinearLayout linkRow = new LinearLayout(this);
+        linkRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        linkRow.setBackground(background(0xfffbf3fc, 15));
+        linkRow.setPadding(dp(4), dp(4), dp(4), dp(4));
+        input.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        linkRow.addView(input, new LinearLayout.LayoutParams(0, -2, 1));
+        linkRow.addView(button("Paste", false, v -> paste()), new LinearLayout.LayoutParams(-2, -2));
+        add(card, linkRow, 12);
         check = button("Find video", true, v -> resolve());
         add(card, check, 0);
         recent = button("Use last link", false, v -> {
@@ -107,11 +128,18 @@ public class MainActivity extends Activity {
         status = label("", 15, MUTED, false);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         add(body, status, 12);
+        resultCard = new LinearLayout(this);
+        resultCard.setOrientation(LinearLayout.VERTICAL);
+        resultCard.setPadding(dp(14), dp(14), dp(14), dp(14));
+        resultCard.setBackground(background(WHITE, 24));
+        resultCard.setVisibility(View.GONE);
+        add(body, resultCard, 18);
+        add(resultCard, label("Video preview", 18, INK, true), 10);
         preview = new VideoView(this);
         preview.setVisibility(View.GONE);
         LinearLayout.LayoutParams player = new LinearLayout.LayoutParams(-1, dp(235));
         player.bottomMargin = dp(12);
-        body.addView(preview, player);
+        resultCard.addView(preview, player);
         preview.setOnClickListener(v -> {
             if (preview.isPlaying()) preview.pause();
             else preview.start();
@@ -122,10 +150,11 @@ public class MainActivity extends Activity {
             return true;
         });
         save = button("Save to device", true, v -> save());
-        add(body, save, 8);
+        add(resultCard, save, 8);
         rewardButton = button("Watch an ad to loop this preview", false, v -> showReward());
-        add(body, rewardButton, 14);
-preview.setOnCompletionListener(mediaPlayer -> {            if (loopPreview && previewReady) preview.start();
+        add(resultCard, rewardButton, 0);
+        preview.setOnCompletionListener(mediaPlayer -> {
+            if (loopPreview && previewReady) preview.start();
         });
         add(body, button("Privacy policy", false, v ->
             startActivity(new Intent(Intent.ACTION_VIEW,
@@ -133,6 +162,7 @@ preview.setOnCompletionListener(mediaPlayer -> {            if (loopPreview && p
         bannerSlot = new LinearLayout(this);
         bannerSlot.setGravity(android.view.Gravity.CENTER);
         bannerSlot.setVisibility(View.GONE);
+        bannerSlot.setPadding(0, dp(24), 0, dp(24));
         add(body, bannerSlot, 14);
         privacy = button("Ad privacy options", false, v -> {
             UserMessagingPlatform.showPrivacyOptionsForm(this, error -> {
@@ -175,18 +205,29 @@ preview.setOnCompletionListener(mediaPlayer -> {            if (loopPreview && p
         return view;
     }
 
+    private TextView headline(String text, int size, int color) {
+        TextView view = label(text, size, color, true);
+        view.setGravity(android.view.Gravity.CENTER);
+        view.setLetterSpacing(-0.055f);
+        return view;
+    }
+
+    private GradientDrawable accentBackground(int radius) {
+        GradientDrawable shape = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+            new int[]{0xff7431aa, 0xffa52882, 0xffbd265d});
+        shape.setCornerRadius(dp(radius));
+        return shape;
+    }
+
     private Button button(String title, boolean primary, View.OnClickListener listener) {
         Button button = new Button(this);
         button.setText(title);
         button.setAllCaps(false);
         button.setTextSize(15);
         button.setTextColor(primary ? WHITE : INK);
-        if (primary) {
-            GradientDrawable gradient = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{0xff7431aa, 0xffbd265d});
-            gradient.setCornerRadius(dp(15));
-            button.setBackground(gradient);
-        } else button.setBackground(background(PANEL, 15));
+        button.setBackground(new android.graphics.drawable.RippleDrawable(
+            android.content.res.ColorStateList.valueOf(primary ? 0x32ffffff : 0x207431aa),
+            primary ? accentBackground(15) : background(PANEL, 15), null));
         button.setMinHeight(dp(50));
         button.setOnClickListener(listener);
         return button;
@@ -230,6 +271,8 @@ preview.setOnCompletionListener(mediaPlayer -> {            if (loopPreview && p
                 preview.seekTo(1);
                 previewReady = true;
                 render();
+                screen.post(() -> screen.smoothScrollTo(0, resultCard.getTop()));
+
             });
             preview.setVideoURI(video);
             status.setText("Video ready · Tap preview to play or pause");
@@ -376,7 +419,7 @@ preview.setOnCompletionListener(mediaPlayer -> {            if (loopPreview && p
     }
 
     private void startAds() {
-        if (adsStarted || BuildConfig.BANNER_ID.isEmpty()) return;
+        if (adsStarted) return;
         adsStarted = true;
         MobileAds.initialize(this, result -> runOnUiThread(() -> {
             if (isDestroyed()) return;
@@ -391,21 +434,25 @@ preview.setOnCompletionListener(mediaPlayer -> {            if (loopPreview && p
         bannerSlot.removeAllViews();
         bannerSlot.setVisibility(View.GONE);
         banner = null;
+        bannerUnit = null;
     }
 
     private void updateBanner() {
-        if (!previewReady || !adsReady || !consent.canRequestAds()) {
+        String unit = previewReady ? BuildConfig.BANNER_ID : BuildConfig.HOME_BANNER_ID;
+        if (!adsReady || !consent.canRequestAds() || unit.isEmpty()) {
             clearBanner();
             return;
         }
-        if (banner != null) return;
+        if (banner != null && unit.equals(bannerUnit)) return;
+        clearBanner();
         AdView view = new AdView(this);
         banner = view;
+        bannerUnit = unit;
         view.setAdSize(AdSize.BANNER);
-        view.setAdUnitId(BuildConfig.BANNER_ID);
+        view.setAdUnitId(unit);
         view.setAdListener(new AdListener() {
             @Override public void onAdLoaded() {
-                if (banner == view && previewReady) bannerSlot.setVisibility(View.VISIBLE);
+                if (banner == view) bannerSlot.setVisibility(View.VISIBLE);
             }
         });
         bannerSlot.addView(view);
@@ -466,6 +513,9 @@ preview.setOnCompletionListener(mediaPlayer -> {            if (loopPreview && p
 
     private void render() {
         check.setEnabled(!busy);
+        resultCard.setVisibility(previewReady || clip != null ? View.VISIBLE : View.GONE);
+        check.setText(busy && !previewReady ? "Finding video…" : "Find video");
+        save.setText(busy && previewReady ? "Saving…" : "Save to device");
         save.setVisibility(previewReady ? View.VISIBLE : View.GONE);
         save.setEnabled(!busy);
         updateBanner();
