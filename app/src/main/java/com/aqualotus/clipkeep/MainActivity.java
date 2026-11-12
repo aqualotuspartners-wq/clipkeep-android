@@ -125,8 +125,7 @@ public class MainActivity extends Activity {
         add(body, save, 8);
         rewardButton = button("Watch an ad to loop this preview", false, v -> showReward());
         add(body, rewardButton, 14);
-        preview.setOnCompletionListener(player -> {
-            if (loopPreview && previewReady) preview.start();
+preview.setOnCompletionListener(mediaPlayer -> {            if (loopPreview && previewReady) preview.start();
         });
         add(body, button("Privacy policy", false, v ->
             startActivity(new Intent(Intent.ACTION_VIEW,
