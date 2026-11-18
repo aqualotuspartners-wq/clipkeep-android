@@ -197,7 +197,12 @@ async function media(req, res, url, id) {
 
 const server = createServer(async (req, res) => {
     try {
-        const url = new URL(req.url, 'http://localhost');
+         const url = new URL(req.url, 'http://localhost');
+        if (['GET', 'HEAD'].includes(req.method) && url.pathname === '/app-ads.txt') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end(req.method === 'HEAD' ? undefined : 'google.com, pub-3956817331315524, DIRECT, f08c47fec0942fa0\n');
+}
+       
         if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { ok: true });
         if (req.method === 'POST' && url.pathname === '/resolve') return await lookup(req, res);
         const match = /^\/media\/([a-zA-Z0-9_-]{1,80})$/.exec(url.pathname);
